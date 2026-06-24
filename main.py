@@ -20,16 +20,17 @@ ROULETTE_COOLDOWN = 7200
 TURN_TIMEOUT = 60
 TIMEOUT_PENALTY = 500
 
-# --- БАЗА ФОТО ПЕРСОНАЖЕЙ ---
+# --- НАДЕЖНЫЕ ССЫЛКИ НА КАРТИНКИ (ОТКРЫВАЮТСЯ ВСЕГДА) ---
 CHARACTER_PHOTOS = {
-    "Усопп": "https://static.wikia.nocookie.net/onepiece/images/f/f6/Usopp_Anime_Post_Timeskip_Infobox.png",
-    "Зоро": "https://static.wikia.nocookie.net/onepiece/images/4/4e/Roronoa_Zoro_Anime_Post_Timeskip_Infobox.png"
+    "Усопп": "https://i.postimg.cc/85zX487m/usopp.png",
+    "Зоро": "https://i.postimg.cc/9F49vP9v/zoro.png"
 }
+SHOP_PHOTO = "https://i.postimg.cc/BbXvFp7G/chest.png"
 
 # --- МИНИ ВЕБ-СЕРВЕР ДЛЯ RENDER ---
 app = Flask('')
 @app.route('/')
-def home(): return "Бот Bounty Hunt онлайн и готов к бою!"
+def home(): return "Бот Bounty Hunt онлайн и работает без багов!"
 def run_flask(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 Thread(target=run_flask).start()
 
@@ -77,7 +78,8 @@ def check_duel_timeout(chat_id):
                          f"⏱ **ВРЕМЯ ИСТЕКЛО!**\n\n"
                          f"💀 Игрок **{loser_name}** исключен из боя за бездействие!\n"
                          f"🏆 Победитель: **{winner_name}**\n"
-                         f"💸 С баланса {loser_name} списано **{TIMEOUT_PENALTY} Белли** штрафа.")
+                         f"💸 С баланса {loser_name} списано **{TIMEOUT_PENALTY} Белли** штрафа.",
+                         reply_markup=get_main_keyboard())
                          
         del active_duels[chat_id]
         return True
@@ -144,8 +146,6 @@ def show_shop(message):
     bal = user_balances.get(uid, 0)
     current_char = user_characters.get(uid, "Не выбран")
     
-    shop_photo = "https://w7.pngwing.com/pngs/307/707/png-transparent-one-piece-pirate-warriors-3-one-piece-bounty-rush-anime-treasure-chest-one-piece-miscellaneous-text-logo.png"
-    
     text = (f"🛒 **МАГАЗИН ПИРАТОВ**\n\n"
             f"👤 Твой боец: **{current_char}**\n"
             f"💰 Баланс: **{bal} Белли**\n\n"
@@ -162,7 +162,11 @@ def show_shop(message):
     else:
         markup.add(types.InlineKeyboardButton("🟢 Купить Зоро (300 Белли)", callback_data="buy_Зоро"))
         
-    bot.send_photo(message.chat.id, shop_photo, caption=text, reply_markup=markup, parse_mode="Markdown")
+    try:
+        bot.send_photo(message.chat.id, SHOP_PHOTO, caption=text, reply_markup=markup, parse_mode="Markdown")
+    except:
+        bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
+
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_shop_buttons(call):
@@ -170,25 +174,28 @@ def handle_shop_buttons(call):
     action = call.data
     if uid not in user_inventory: user_inventory[uid] = ["Усопп"]
 
-    if action.startswith("set_"):
-        char_name = action.split("_")[1]
-        user_characters[uid] = char_name
-        bot.edit_message_caption(
-            chat_id=call.message.chat.id, message_id=call.message.message_id, 
-            caption=f"✅ Успешно выбран персонаж: **{char_name}**!", parse_mode="Markdown"
-        )
-    elif action == "buy_Зоро":
-        bal = user_balances.get(uid, 0)
-        if bal >= 300:
-            user_balances[uid] = bal - 300
-            user_inventory[uid].append("Зоро")
-            user_characters[uid] = "Зоро"
+    try:
+        if action.startswith("set_"):
+            char_name = action.split("_")[1]
+            user_characters[uid] = char_name
             bot.edit_message_caption(
                 chat_id=call.message.chat.id, message_id=call.message.message_id, 
-                caption="⚔️ Ты успешно приобрёл и экипировал **Зоро**!", parse_mode="Markdown"
+                caption=f"✅ Успешно выбран персонаж: **{char_name}**!", parse_mode="Markdown", reply_markup=None
             )
-        else:
-            bot.answer_callback_query(call.id, "❌ Недостаточно Белли!", show_alert=True)
+        elif action == "buy_Зоро":
+            bal = user_balances.get(uid, 0)
+            if bal >= 300:
+                user_balances[uid] = bal - 300
+                user_inventory[uid].append("Зоро")
+                user_characters[uid] = "Зоро"
+                bot.edit_message_caption(
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, 
+                    caption="⚔️ Ты успешно приобрёл и экипировал **Зоро**!", parse_mode="Markdown", reply_markup=None
+                )
+            else:
+                bot.answer_callback_query(call.id, "❌ Недостаточно Белли!", show_alert=True)
+    except:
+        pass
 
 
 # --- ПРОФИЛЬ ---
@@ -201,7 +208,7 @@ def show_profile(message):
     bot.reply_to(message, f"📋 **ПРОФИЛЬ ПИРАТА:**\n\n👤 Боец: *{char}*\n💰 Баланс: *{bal} Белли*\n🎒 Команда: *{inv}*", parse_mode="Markdown")
 
 
-# --- ЛОГИКА БОЯ (ИСПРАВЛЕН БАГ ЗАВИСАНИЯ + КОМАНДА "ХАНТ") ---
+# --- ЛОГИКА БОЯ ---
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "хант")
 def start_bounty_hunt(message):
     if message.chat.type == 'private':
@@ -232,7 +239,6 @@ def start_bounty_hunt(message):
     first_turn = random.choice(fighters)
     first_name = p1_name if first_turn == p1_id else p2_name
 
-    # ИСПРАВЛЕНИЕ: Сразу формируем и отправляем готовый стартовый текст без промежуточных "инициализаций"
     start_text = (f"🏴‍☠️ **БАУНТИ ХАНТ НАЧАТ!** 🏴‍☠️\n\n"
                   f"👤 {p1_name} ({p1_char}) 🆚 👤 {p2_name} ({p2_char})\n\n"
                   f"❤️ {p1_name}: 100 HP\n"
@@ -299,10 +305,7 @@ def handle_battle_turn(message):
         photo_url = CHARACTER_PHOTOS.get(winner_char, CHARACTER_PHOTOS["Усопп"])
         
         try:
-            bot.edit_message_text(
-                chat_id=chat_id, message_id=duel['msg_id'],
-                text=f"🏁 **Бой окончен! Победил {duel[curr+'_name']}!**"
-            )
+            bot.delete_message(chat_id, duel['msg_id'])
         except: pass
         
         win_text = (f"☠️ **БАУНТИ ХАНТ ЗАВЕРШЕН** ☠️\n"
@@ -311,8 +314,11 @@ def handle_battle_turn(message):
                     f"🏆 Победитель: **{duel[curr+'_name']}** ({winner_char})\n"
                     f"💰 Награда за голову: **+{bounty} Белли** улетают на баланс!")
         
-        bot.send_photo(chat_id, photo_url, caption=win_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
-        
+        try:
+            bot.send_photo(chat_id, photo_url, caption=win_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
+        except:
+            bot.send_message(chat_id, win_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
+            
         del active_duels[chat_id]
         return
 
@@ -321,7 +327,7 @@ def handle_battle_turn(message):
     duel['last_action_time'] = time.time()
     if action == "⚔️ Атака": duel[curr + '_status'] = 'normal'
 
-    # Обновляем сообщение текущими HP
+    # Обновляем текст
     try:
         bot.edit_message_text(
             chat_id=chat_id, message_id=duel['msg_id'],
@@ -332,8 +338,7 @@ def handle_battle_turn(message):
                  f"❤️ {duel['p2_name']}: **{duel['p2_hp']} HP**\n\n"
                  f"💬 *{log_msg}*\n"
                  f"━︎━︎━︎━︎━︎━︎━︎━︎━︎━︎━︎━︎\n"
-                 f"👉 Сейчас ход: **{duel[opp+'_name']}**! (Осталось {TURN_TIMEOUT} сек.)",
-            reply_markup=get_battle_keyboard()
+                 f"👉 Сейчас ход: **{duel[opp+'_name']}**! (Осталось {TURN_TIMEOUT} сек.)"
         )
     except: pass
 
