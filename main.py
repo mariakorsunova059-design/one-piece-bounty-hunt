@@ -21,7 +21,6 @@ TURN_TIMEOUT = 60
 TIMEOUT_PENALTY = 500
 
 # --- БАЗА ФОТО ПЕРСОНАЖЕЙ ---
-# Сюда ты можешь добавлять ссылки на картинки любых новых персонажей
 CHARACTER_PHOTOS = {
     "Усопп": "https://static.wikia.nocookie.net/onepiece/images/f/f6/Usopp_Anime_Post_Timeskip_Infobox.png",
     "Зоро": "https://static.wikia.nocookie.net/onepiece/images/4/4e/Roronoa_Zoro_Anime_Post_Timeskip_Infobox.png"
@@ -67,7 +66,6 @@ def check_duel_timeout(chat_id):
             
         user_balances[loser_id] = max(0, user_balances.get(loser_id, 0) - TIMEOUT_PENALTY)
         
-        # Замораживаем боевое сообщение
         try:
             bot.edit_message_text(
                 chat_id=chat_id, message_id=duel['msg_id'],
@@ -75,7 +73,6 @@ def check_duel_timeout(chat_id):
             )
         except: pass
         
-        # Отправляем новое сообщение о поражении за АФК
         bot.send_message(chat_id, 
                          f"⏱ **ВРЕМЯ ИСТЕКЛО!**\n\n"
                          f"💀 Игрок **{loser_name}** исключен из боя за бездействие!\n"
@@ -138,7 +135,7 @@ def daily_roulette(message):
                  parse_mode="Markdown")
 
 
-# --- МАГАЗИН ПЕРСОНАЖЕЙ (С ФОТО) ---
+# --- МАГАЗИН ПЕРСОНАЖЕЙ ---
 @bot.message_handler(func=lambda m: m.text == "🎯 Персонажи / Магазин")
 def show_shop(message):
     uid = message.from_user.id
@@ -147,7 +144,6 @@ def show_shop(message):
     bal = user_balances.get(uid, 0)
     current_char = user_characters.get(uid, "Не выбран")
     
-    # Картинка сундука для красивого оформления витрины магазина
     shop_photo = "https://w7.pngwing.com/pngs/307/707/png-transparent-one-piece-pirate-warriors-3-one-piece-bounty-rush-anime-treasure-chest-one-piece-miscellaneous-text-logo.png"
     
     text = (f"🛒 **МАГАЗИН ПИРАТОВ**\n\n"
@@ -177,8 +173,6 @@ def handle_shop_buttons(call):
     if action.startswith("set_"):
         char_name = action.split("_")[1]
         user_characters[uid] = char_name
-        
-        # Пересобираем текст ответа, удаляя старые инлайн кнопки
         bot.edit_message_caption(
             chat_id=call.message.chat.id, message_id=call.message.message_id, 
             caption=f"✅ Успешно выбран персонаж: **{char_name}**!", parse_mode="Markdown"
@@ -194,7 +188,7 @@ def handle_shop_buttons(call):
                 caption="⚔️ Ты успешно приобрёл и экипировал **Зоро**!", parse_mode="Markdown"
             )
         else:
-            bot.answer_callback_query(call.id, "❌ Недостаточно Белли! Поднакопи с рулетки.", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ Недостаточно Белли!", show_alert=True)
 
 
 # --- ПРОФИЛЬ ---
@@ -207,14 +201,14 @@ def show_profile(message):
     bot.reply_to(message, f"📋 **ПРОФИЛЬ ПИРАТА:**\n\n👤 Боец: *{char}*\n💰 Баланс: *{bal} Белли*\n🎒 Команда: *{inv}*", parse_mode="Markdown")
 
 
-# --- ЛОГИКА БОЯ ---
-@bot.message_handler(func=lambda m: m.text and m.text.lower() == "баунти хант")
+# --- ЛОГИКА БОЯ (ИСПРАВЛЕН БАГ ЗАВИСАНИЯ + КОМАНДА "ХАНТ") ---
+@bot.message_handler(func=lambda m: m.text and m.text.lower() == "хант")
 def start_bounty_hunt(message):
     if message.chat.type == 'private':
         bot.reply_to(message, "Эту команду нужно писать в чате в ответ на сообщение соперника!")
         return
     if not message.reply_to_message:
-        bot.reply_to(message, "Напиши 'баунти хант' в ответ на сообщение соперника!")
+        bot.reply_to(message, "Напиши 'хант' в ответ на сообщение соперника!")
         return
 
     p1_id, p2_id = message.from_user.id, message.reply_to_message.from_user.id
@@ -238,7 +232,14 @@ def start_bounty_hunt(message):
     first_turn = random.choice(fighters)
     first_name = p1_name if first_turn == p1_id else p2_name
 
-    msg = bot.send_message(chat_id, "⚔️ **Инициализация дуэли...**", reply_markup=get_battle_keyboard())
+    # ИСПРАВЛЕНИЕ: Сразу формируем и отправляем готовый стартовый текст без промежуточных "инициализаций"
+    start_text = (f"🏴‍☠️ **БАУНТИ ХАНТ НАЧАТ!** 🏴‍☠️\n\n"
+                  f"👤 {p1_name} ({p1_char}) 🆚 👤 {p2_name} ({p2_char})\n\n"
+                  f"❤️ {p1_name}: 100 HP\n"
+                  f"❤️ {p2_name}: 100 HP\n\n"
+                  f"👉 Первым ходит: **{first_name}**!")
+
+    msg = bot.send_message(chat_id, start_text, reply_markup=get_battle_keyboard())
 
     active_duels[chat_id] = {
         'p1': p1_id, 'p1_name': p1_name, 'p1_char': p1_char, 'p1_hp': 100, 'p1_status': 'normal',
@@ -247,16 +248,6 @@ def start_bounty_hunt(message):
         'msg_id': msg.message_id,
         'last_action_time': time.time()
     }
-
-    bot.edit_message_text(
-        chat_id=chat_id, message_id=msg.message_id,
-        text=f"🏴‍☠️ **БАУНТИ ХАНТ НАЧАТ!** 🏴‍☠️\n\n"
-             f"👤 {p1_name} ({p1_char}) 🆚 👤 {p2_name} ({p2_char})\n\n"
-             f"❤️ {p1_name}: 100 HP\n"
-             f"❤️ {p2_name}: 100 HP\n\n"
-             f"👉 Первым ходит: **{first_name}**!",
-        reply_markup=get_battle_keyboard()
-    )
 
     try: bot.delete_message(chat_id, message.message_id)
     except: pass
@@ -307,7 +298,6 @@ def handle_battle_turn(message):
         winner_char = duel[curr + '_char']
         photo_url = CHARACTER_PHOTOS.get(winner_char, CHARACTER_PHOTOS["Усопп"])
         
-        # 1. Сворачиваем боевое сообщение
         try:
             bot.edit_message_text(
                 chat_id=chat_id, message_id=duel['msg_id'],
@@ -315,7 +305,6 @@ def handle_battle_turn(message):
             )
         except: pass
         
-        # 2. Выкатываем отдельный триумфальный пост с КАРТИНКОЙ персонажа
         win_text = (f"☠️ **БАУНТИ ХАНТ ЗАВЕРШЕН** ☠️\n"
                     f"━︎━︎━︎━︎━︎━︎━︎━︎━︎━︎━︎━︎\n"
                     f"💀 **{duel[opp+'_name']}** повержен на землю!\n\n"
@@ -332,7 +321,7 @@ def handle_battle_turn(message):
     duel['last_action_time'] = time.time()
     if action == "⚔️ Атака": duel[curr + '_status'] = 'normal'
 
-    # Обновляем старое сообщение текущими HP
+    # Обновляем сообщение текущими HP
     try:
         bot.edit_message_text(
             chat_id=chat_id, message_id=duel['msg_id'],
